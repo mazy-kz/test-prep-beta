@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Subject {
@@ -16,17 +16,17 @@ model Subject {
 }
 
 model Question {
-  id        String   @id @default(cuid())
-  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  id        String  @id @default(cuid())
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   subjectId String
 
-  text     String
-  choiceA  String
-  choiceB  String
-  choiceC  String
-  choiceD  String?
-  correct  String     // 'A' | 'B' | 'C' | 'D'
-  comment  String?
+  text    String
+  choiceA String
+  choiceB String
+  choiceC String
+  choiceD String?
+  correct String
+  comment String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
