@@ -1,14 +1,21 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const router = useRouter();
 
   const handleLogin = () => {
     if (password === "sHOTcANt32") {
-      window.location.href = "/admin"; // go to admin dashboard
+      // ✅ mark session in localStorage (middleware checks this)
+      localStorage.setItem("isAdmin", "true");
+
+      // ✅ redirect to admin page
+      document.cookie = "admin=1; Path=/; Max-Age=86400; SameSite=Lax";
+      router.push("/admin");
     } else {
       setError("Invalid password");
     }
