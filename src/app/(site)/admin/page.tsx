@@ -1,5 +1,7 @@
 'use client';
+
 import React, { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 type Subject = { id: string; name: string };
 type Choice = 'A' | 'B' | 'C' | 'D';
