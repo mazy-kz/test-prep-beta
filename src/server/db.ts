@@ -1,11 +1,15 @@
 import { PrismaClient } from '@prisma/client';
 
-const g = global as unknown as { prisma?: PrismaClient };
+declare global {
+  // eslint-disable-next-line no-var
+  var prisma: PrismaClient | undefined;
+}
 
+// Reuse a single PrismaClient in dev; new client in prod.
 export const prisma =
-  g.prisma ??
+  global.prisma ??
   new PrismaClient({
-    log: ['warn', 'error'],
+    log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
   });
 
-if (process.env.NODE_ENV !== 'production') g.prisma = prisma;
+if (process.env.NODE_ENV !== 'production') global.prisma = prisma;
