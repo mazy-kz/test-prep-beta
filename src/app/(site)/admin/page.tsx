@@ -132,9 +132,24 @@ export default function AdminPage() {
     const res = await fetch('/api/questions/import', { method: 'POST', body: fd });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      setStatus(`Imported ${data.created?.length ?? 0} questions.`);
+      // UPDATED COUNTER: accept either a number or an array for created,
+      // and show how many rows were skipped if the API returned `problems`.
+      const created =
+        typeof data?.created === 'number'
+          ? data.created
+          : Array.isArray(data?.created)
+          ? data.created.length
+          : 0;
+      const skipped = Array.isArray(data?.problems) ? data.problems.length : 0;
+
+      setStatus(
+        `Imported ${created} question${created === 1 ? '' : 's'}` +
+          (skipped ? `. Skipped ${skipped}.` : '.')
+      );
       loadQuestions(selected);
-    } else setError((data as any)?.error || 'Upload failed');
+    } else {
+      setError((data as any)?.error || 'Upload failed');
+    }
   }
 
   async function addManual() {
