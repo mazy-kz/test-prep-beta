@@ -1,103 +1,95 @@
-import { NextResponse } from 'next/server';
+// src/app/api/questions/import/route.ts
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/server/db';
 import * as XLSX from 'xlsx';
+import type { Prisma } from '@prisma/client';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
 
-const trim = (v: unknown) => (v == null ? '' : String(v).trim());
+// A = Question (required)
+// B = Correct answer text (required; stored as choiceA + correct='A')
+// C = Other option (required)
+// D = Other option (optional)
+// E = Other option (optional)
+// F = Comment (optional)
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
     const form = await req.formData();
     const file = form.get('file') as File | null;
-    const subjectId = trim(form.get('subjectId'));
+    const subjectId = String(form.get('subjectId') || '');
 
-    if (!subjectId) return NextResponse.json({ error: 'subjectId is required' }, { status: 400 });
-    const subject = await prisma.subject.findUnique({ where: { id: subjectId } });
-    if (!subject) return NextResponse.json({ error: 'Subject not found' }, { status: 404 });
-    if (!file) return NextResponse.json({ error: 'file is required' }, { status: 400 });
-
-    const buf = new Uint8Array(await file.arrayBuffer());
-    const wb = XLSX.read(buf, { type: 'array' });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    if (!ws) return NextResponse.json({ error: 'No worksheet found' }, { status: 400 });
-
-    const rows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, raw: true }) as any[][];
-    if (!rows?.length) return NextResponse.json({ created: [], count: 0 });
-
-    const data = rows.filter(r => Array.isArray(r) && r.some(c => trim(c) !== ''));
-    // Optional header
-    if (data.length) {
-      const a0 = trim(data[0][0]).toLowerCase();
-      const b0 = trim(data[0][1]).toLowerCase();
-      if (a0.includes('question') || b0.includes('correct')) data.shift();
+    if (!file || !subjectId) {
+      return NextResponse.json(
+        { error: 'Missing file or subjectId.' },
+        { status: 400 }
+      );
     }
 
+    const buf = Buffer.from(await file.arrayBuffer());
+    const wb = XLSX.read(buf, { type: 'buffer' });
+    const sheetName = wb.SheetNames[0];
+    const ws = wb.Sheets[sheetName];
+    const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+    if (!rows || rows.length < 2) {
+      return NextResponse.json(
+        { error: 'Sheet is empty or missing data rows.' },
+        { status: 400 }
+      );
+    }
+
+    const dataRows = rows.slice(1);
     const problems: string[] = [];
-    const writes = [];
 
-    data.forEach((r, i) => {
-      const row = i + 2; // close enough even if header removed
-      const qText = trim(r[0]);          // A (required)
-      const correct = trim(r[1]);        // B (required)
-      const optC = trim(r[2]);           // C (required)
-      const optD = trim(r[3]);           // D (optional)
-      const optE = trim(r[4]);           // E (optional)
-      const comment = trim(r[5]) || null;
+    // 👇 Explicit typing fixes the build error on Vercel
+    const writes: Prisma.PrismaPromise<unknown>[] = [];
 
-      if (!qText)   { problems.push(`Row ${row}: Column A (question) is required.`); return; }
-      if (!correct) { problems.push(`Row ${row}: Column B (correct answer) is required.`); return; }
-      if (!optC)    { problems.push(`Row ${row}: Column C (other option) is required.`); return; }
+    dataRows.forEach((r, i) => {
+      const row = i + 2;
 
-      // Guarantee non-null choiceB & choiceC
-      const choiceA = correct;                 // correct
-      const choiceB = optC;                    // required "other option"
-      let   choiceC = '';                      // must be non-null
-      let   choiceD: string | null = null;
+      const q = (r[0] ?? '').toString().trim();         // A
+      const correctText = (r[1] ?? '').toString().trim(); // B
+      const optC = r[2] != null ? r[2].toString().trim() : ''; // C
+      const optD = r[3] != null ? r[3].toString().trim() : ''; // D (optional)
+      const optE = r[4] != null ? r[4].toString().trim() : ''; // E (optional)
+      const comment = r[5] != null ? r[5].toString().trim() : ''; // F (optional)
 
-      if (optD && optE) {                      // both present
-        choiceC = optD;
-        choiceD = optE;
-      } else if (optD && !optE) {              // only D present
-        choiceC = optD;
-        choiceD = null;
-      } else if (!optD && optE) {              // only E present → promote E into C
-        choiceC = optE;
-        choiceD = null;
-      } else {                                 // neither D nor E present → synthesize
-        choiceC = 'None of these';
-        choiceD = null;
+      // Validate required: A, B, C
+      if (!q || !correctText || !optC) {
+        problems.push(`Row ${row}: columns A, B and C are required.`);
+        return;
       }
 
       writes.push(
         prisma.question.create({
           data: {
-            text: qText,
-            choiceA,
-            choiceB,
-            choiceC,           // ✅ always provided
-            choiceD,
+            subjectId,
+            text: q,
+            // store B (correct text) into A; mark A as correct
+            choiceA: correctText,
+            choiceB: optC || null,
+            choiceC: optD || null,
+            choiceD: optE || null,
             correct: 'A',
-            comment,
-            subject: { connect: { id: subjectId } },
+            comment: comment || null,
           },
-          select: { id: true },
         })
       );
     });
 
-    if (problems.length) {
-      // return the first problem (UI shows a single banner), include full list for debugging if needed
-      return NextResponse.json({ error: problems[0], details: problems }, { status: 400 });
+    if (writes.length === 0) {
+      return NextResponse.json({ created: [], problems });
     }
-    if (!writes.length) return NextResponse.json({ created: [], count: 0 });
 
     const created = await prisma.$transaction(writes);
-    return NextResponse.json({ created: created.map(c => c.id), count: created.length });
-  } catch (e: any) {
-    console.error('[POST /api/questions/import]', e);
-    return NextResponse.json({ error: e?.message || 'Import failed' }, { status: 500 });
+    return NextResponse.json({ created, problems });
+  } catch (err) {
+    console.error('[IMPORT]', err);
+    return NextResponse.json(
+      { error: 'Import failed. See server logs.' },
+      { status: 500 }
+    );
   }
 }
