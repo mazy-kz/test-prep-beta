@@ -1,125 +1,128 @@
+// src/app/api/questions/import/route.ts
 import { NextResponse } from 'next/server';
+import * as XLSX from 'xlsx';
 import { prisma } from '@/server/db';
-
-export const runtime = 'nodejs';        // hard force Node runtime for Vercel
-export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+import type { Prisma } from '@prisma/client';
 
 type Letter = 'A' | 'B' | 'C' | 'D';
-const letters: Letter[] = ['A', 'B', 'C', 'D'];
-const idxToLetter = (i: number) => letters[i];
+
+function asStr(v: unknown): string {
+  if (v === undefined || v === null) return '';
+  return String(v).trim();
+}
 
 export async function POST(req: Request) {
   try {
-    //⚠️ dynamic import avoids edge/esm bundling issues on Vercel
-    const XLSX = (await import('xlsx')).default || (await import('xlsx'));
+    const form = await req.formData();
 
-    const fd = await req.formData();
-    const file = fd.get('file') as File | null;
-    const subjectId = (fd.get('subjectId') as string | null)?.trim() || '';
+    const subjectId = asStr(form.get('subjectId'));
+    const file = form.get('file');
 
     if (!subjectId) {
-      return NextResponse.json({ ok: false, message: 'Missing subjectId.' }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'Missing subjectId.' }, { status: 400 });
     }
-    if (!file) {
-      return NextResponse.json({ ok: false, message: 'Missing file.' }, { status: 400 });
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      return NextResponse.json({ ok: false, message: 'File too large (>5MB).' }, { status: 400 });
+    if (!(file instanceof Blob)) {
+      return NextResponse.json({ ok: false, error: 'No file uploaded.' }, { status: 400 });
     }
 
+    // Read the file into XLSX
     const buf = Buffer.from(await file.arrayBuffer());
-
-    // Parse workbook
     const wb = XLSX.read(buf, { type: 'buffer' });
-    const sheetName = wb.SheetNames?.[0];
-    if (!sheetName) {
-      return NextResponse.json({ ok: false, message: 'No sheet found.' }, { status: 400 });
+    const firstSheetName = wb.SheetNames[0];
+    if (!firstSheetName) {
+      return NextResponse.json({ ok: false, error: 'Workbook has no sheets.' }, { status: 400 });
     }
+    const sheet = wb.Sheets[firstSheetName];
 
-    const ws = wb.Sheets[sheetName];
-    const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+    // rows as arrays; defval ensures empty cells become ""
+    const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      raw: false,
+      defval: '',
+      blankrows: false,
+      range: 0,
+    }) as unknown[][];
 
-    if (!rows?.length) {
-      return NextResponse.json({ ok: false, message: 'Sheet is empty.' }, { status: 400 });
-    }
-
-    // detect header
-    const looksHeader = String(rows[0]?.[0] ?? '').toLowerCase().includes('question');
-    const start = looksHeader ? 1 : 0;
+    // If the user left a header row, try to detect and drop it
+    const looksLikeHeader = (r: unknown[]) => {
+      const a = asStr(r[0]).toLowerCase();
+      const b = asStr(r[1]).toLowerCase();
+      return a.includes('question') || b.includes('correct');
+    };
+    const data = rows.filter((r) => r.length > 0);
+    if (data.length && looksLikeHeader(data[0])) data.shift();
 
     const problems: string[] = [];
-    const batch: {
-      subjectId: string;
-      text: string;
-      choiceA: string;
-      choiceB: string;
-      choiceC: string | null;
-      choiceD: string | null;
-      correct: Letter;
-      comment: string | null;
-    }[] = [];
+    const batch: Prisma.QuestionCreateManyInput[] = [];
 
-    for (let i = start; i < rows.length; i++) {
-      const r = rows[i] || [];
-      const rowNum = i + 1;
+    data.forEach((r, i) => {
+      const row = i + 2; // close enough even if there wasn't a header
+      const q = asStr(r[0]);               // Column A - Question (required)
+      const correctText = asStr(r[1]);     // Column B - Correct answer text (required)
+      const other1 = asStr(r[2]);          // Column C - Wrong option (required)
+      const other2 = asStr(r[3]);          // Column D - Wrong option (optional)
+      const other3 = asStr(r[4]);          // Column E - Wrong option (optional)
+      const comment = asStr(r[5]) || null; // Column F - Comment (optional)
 
-      const q = (r[0] ?? '').toString().trim();             // A = question (required)
-      const correctText = (r[1] ?? '').toString().trim();   // B = correct text (required)
-      const optA = (r[2] ?? '').toString().trim();          // C = Option A (required)
-      const optB = (r[3] ?? '').toString().trim();          // D = Option B (optional)
-      const optC = (r[4] ?? '').toString().trim();          // E = Option C (optional)
-      const comment = (r[5] ?? '').toString().trim();       // F = comment (optional)
-
-      // entirely blank row → skip
-      if (!q && !correctText && !optA && !optB && !optC && !comment) continue;
-
-      if (!q) { problems.push(`Row ${rowNum}: missing Question (A).`); continue; }
-      if (!correctText) { problems.push(`Row ${rowNum}: missing Correct text (B).`); continue; }
-      if (!optA) { problems.push(`Row ${rowNum}: missing Option A (C).`); continue; }
-
-      const options = [optA, optB, optC].filter(Boolean);
-      const correctIdx = options.findIndex(
-        (o) => o.trim().toLowerCase() === correctText.toLowerCase()
-      );
-      if (correctIdx < 0) {
-        problems.push(`Row ${rowNum}: correct text (B) not found among options C–E.`);
-        continue;
+      // Basic validation: need question, correct, and at least one other option
+      if (!q || !correctText || !other1) {
+        problems.push(`Row ${row}: missing required fields (A=question, B=correct, C=other).`);
+        return;
       }
 
-      const [cA, cB, cC, cD] = [options[0] ?? '', options[1] ?? '', options[2] ?? '', options[3] ?? ''];
+      // Build options: put correct first so 'A' is always the correct letter.
+      // Remove empty & duplicate options while preserving order.
+      const options = [correctText, other1, other2, other3]
+        .map((s) => asStr(s))
+        .filter((s, idx, arr) => s !== '' && arr.indexOf(s) === idx);
 
-      batch.push({
+      if (options.length < 2) {
+        problems.push(`Row ${row}: not enough distinct options after cleaning.`);
+        return;
+      }
+      if (options.length > 4) options.length = 4; // safety, though we only ever add up to 4
+
+      const [choiceA, choiceB, choiceCVal, choiceDVal] = [
+        options[0] ?? '',
+        options[1] ?? '',
+        options[2] ?? '',
+        options[3] ?? '',
+      ];
+
+      // Prisma schema requires choiceC to be a non-null string.
+      // choiceD is optional in schema, so we can store null if it doesn't exist.
+      const item: Prisma.QuestionCreateManyInput = {
         subjectId,
         text: q,
-        choiceA: cA,
-        choiceB: cB,
-        choiceC: cC || null,
-        choiceD: cD || null,
-        correct: idxToLetter(correctIdx),
-        comment: comment || null,
-      });
+        choiceA,
+        choiceB,
+        choiceC: choiceCVal || '', // *** MUST be string, not null ***
+        choiceD: choiceDVal ? choiceDVal : null,
+        correct: 'A' as Letter, // correct is always 'A' because we placed the correct text first
+        comment,
+      };
+
+      batch.push(item);
+    });
+
+    if (batch.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: 'No valid rows to import.', problems },
+        { status: 400 }
+      );
     }
 
-    if (!batch.length) {
-      return NextResponse.json({
-        ok: true, created: 0, problems: problems.length ? problems : ['No valid rows found.'],
-      });
-    }
-
-    // write in chunks
+    // Insert in chunks to avoid exceeding limits
     const CHUNK = 500;
     for (let i = 0; i < batch.length; i += CHUNK) {
-      const slice = batch.slice(i, i + CHUNK);
-      await prisma.question.createMany({ data: slice });
+      await prisma.question.createMany({
+        data: batch.slice(i, i + CHUNK),
+      });
     }
 
     return NextResponse.json({ ok: true, created: batch.length, problems });
-  } catch (err: any) {
-    // return full error so you can see the reason in DevTools → Network → Response
-    const message = err?.message || String(err);
-    const stack = err?.stack || null;
-    console.error('IMPORT_ROUTE_ERROR:', message, stack);
-    return NextResponse.json({ ok: false, message, stack }, { status: 500 });
+  } catch (err) {
+    console.error('Import failed:', err);
+    return NextResponse.json({ error: 'Import failed. See server logs.' }, { status: 500 });
   }
 }
