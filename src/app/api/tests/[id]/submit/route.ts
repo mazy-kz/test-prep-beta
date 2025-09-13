@@ -1,0 +1,2 @@
+import { NextResponse } from 'next/server'; import { prisma } from '@/server/db';
+export async function POST(req: Request,{params}:{params:{id:string}}){ const body=await req.json(); const answers=(body?.answers as {responseId:string,picked:'A'|'B'|'C'|'D'|null}[])??[]; for(const a of answers){ await prisma.testResponse.update({where:{id:a.responseId},data:{picked:a.picked}}); } await prisma.testSession.update({where:{id:params.id},data:{finishedAt:new Date()}}); return NextResponse.json({ok:true}); }
