@@ -1,95 +1,180 @@
-// src/app/api/questions/import/route.ts
-import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/server/db';
+/* eslint-disable import/no-extraneous-dependencies */
+import { NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
-import type { Prisma } from '@prisma/client';
+import { prisma } from '@/server/db';
 
+// IMPORTANT: XLSX needs Node runtime (not Edge) on Vercel
 export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
-// A = Question (required)
-// B = Correct answer text (required; stored as choiceA + correct='A')
-// C = Other option (required)
-// D = Other option (optional)
-// E = Other option (optional)
-// F = Comment (optional)
+// If your imports may take longer than default, you can optionally lift this:
+// export const maxDuration = 60; // seconds (Vercel Pro+)
 
-export async function POST(req: NextRequest) {
+type Letter = 'A' | 'B' | 'C' | 'D';
+
+// Make a letter from index (0->A, 1->B, 2->C, 3->D)
+function idxToLetter(i: number): Letter {
+  return (['A', 'B', 'C', 'D'] as const)[i];
+}
+
+export async function POST(req: Request) {
   try {
     const form = await req.formData();
     const file = form.get('file') as File | null;
-    const subjectId = String(form.get('subjectId') || '');
+    const subjectId = (form.get('subjectId') as string | null)?.trim() || '';
 
-    if (!file || !subjectId) {
+    if (!subjectId) {
       return NextResponse.json(
-        { error: 'Missing file or subjectId.' },
+        { ok: false, message: 'Missing subjectId.' },
         { status: 400 }
       );
     }
 
+    if (!file) {
+      return NextResponse.json(
+        { ok: false, message: 'Missing file.' },
+        { status: 400 }
+      );
+    }
+
+    // Read uploaded XLSX file into a Buffer
     const buf = Buffer.from(await file.arrayBuffer());
-    const wb = XLSX.read(buf, { type: 'buffer' });
-    const sheetName = wb.SheetNames[0];
-    const ws = wb.Sheets[sheetName];
-    const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
-    if (!rows || rows.length < 2) {
+    // Parse workbook
+    const workbook = XLSX.read(buf, { type: 'buffer' });
+    // Use the first sheet
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) {
       return NextResponse.json(
-        { error: 'Sheet is empty or missing data rows.' },
+        { ok: false, message: 'No sheets found in the workbook.' },
+        { status: 400 }
+      );
+    }
+    const sheet = workbook.Sheets[sheetName];
+
+    // Convert to a 2D array (raw values)
+    const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+    if (!rows || rows.length === 0) {
+      return NextResponse.json(
+        { ok: false, message: 'Sheet appears to be empty.' },
         { status: 400 }
       );
     }
 
-    const dataRows = rows.slice(1);
+    // If first row looks like a header, you can drop it automatically.
+    // We’ll keep it simple: if the first row contains the word "question" (case-insensitive) in col A, drop it.
+    const firstRow = rows[0] ?? [];
+    const firstA = String(firstRow[0] ?? '').toLowerCase();
+    const startIdx = firstA.includes('question') ? 1 : 0;
+
     const problems: string[] = [];
+    const toCreate: {
+      subjectId: string;
+      text: string;
+      choiceA: string;
+      choiceB: string;
+      choiceC: string | null;
+      choiceD: string | null;
+      correct: Letter;
+      comment: string | null;
+    }[] = [];
 
-    // 👇 Explicit typing fixes the build error on Vercel
-    const writes: Prisma.PrismaPromise<unknown>[] = [];
+    for (let i = startIdx; i < rows.length; i++) {
+      const rowNum = i + 1; // 1-based for messages
+      const r = rows[i] || [];
 
-    dataRows.forEach((r, i) => {
-      const row = i + 2;
+      // Columns: A=0, B=1, C=2, D=3, E=4, F=5
+      const q = (r[0] ?? '').toString().trim(); // Question
+      const correctText = (r[1] ?? '').toString().trim(); // Correct text
+      const optA = (r[2] ?? '').toString().trim(); // Option A (required)
+      const optB = (r[3] ?? '').toString().trim(); // Option B (optional)
+      const optC = (r[4] ?? '').toString().trim(); // Option C (optional)
+      const comment = (r[5] ?? '').toString().trim(); // Comment (optional)
 
-      const q = (r[0] ?? '').toString().trim();         // A
-      const correctText = (r[1] ?? '').toString().trim(); // B
-      const optC = r[2] != null ? r[2].toString().trim() : ''; // C
-      const optD = r[3] != null ? r[3].toString().trim() : ''; // D (optional)
-      const optE = r[4] != null ? r[4].toString().trim() : ''; // E (optional)
-      const comment = r[5] != null ? r[5].toString().trim() : ''; // F (optional)
-
-      // Validate required: A, B, C
-      if (!q || !correctText || !optC) {
-        problems.push(`Row ${row}: columns A, B and C are required.`);
-        return;
+      if (!q) {
+        // ignore totally empty rows
+        if (!correctText && !optA && !optB && !optC && !comment) continue;
+        problems.push(`Row ${rowNum}: Missing question in column A.`);
+        continue;
+      }
+      if (!correctText) {
+        problems.push(`Row ${rowNum}: Missing correct text in column B.`);
+        continue;
+      }
+      if (!optA) {
+        problems.push(`Row ${rowNum}: Missing Option A in column C.`);
+        continue;
       }
 
-      writes.push(
-        prisma.question.create({
-          data: {
-            subjectId,
-            text: q,
-            // store B (correct text) into A; mark A as correct
-            choiceA: correctText,
-            choiceB: optC || null,
-            choiceC: optD || null,
-            choiceD: optE || null,
-            correct: 'A',
-            comment: comment || null,
-          },
-        })
-      );
-    });
+      // Build the candidate options list (C, D, E, optionally F would be a comment)
+      // We support up to 4 choices; if you want a 4th option, put it in column E and
+      // leave comment in F. If you prefer 3-choice questions, leave D/E empty.
+      const options = [optA, optB, optC].filter(Boolean);
 
-    if (writes.length === 0) {
-      return NextResponse.json({ created: [], problems });
+      // We allow up to 4 options. If you want exactly 4, add another column and extend here.
+      if (options.length > 4) options.length = 4;
+
+      // Match the "correctText" to one of the options
+      const correctIdx = options.findIndex(
+        (o) => o.trim().toLowerCase() === correctText.trim().toLowerCase()
+      );
+
+      if (correctIdx < 0) {
+        problems.push(
+          `Row ${rowNum}: Correct text in column B does not match any option (C–E).`
+        );
+        continue;
+      }
+
+      // Normalize to ChoiceA/B/C/D fields
+      const [cA, cB, cC, cD] = [
+        options[0] ?? '',
+        options[1] ?? '',
+        options[2] ?? '',
+        options[3] ?? '',
+      ];
+
+      // Safety: at least A and B slots exist, C/D can be null if unused.
+      toCreate.push({
+        subjectId,
+        text: q,
+        choiceA: cA,
+        choiceB: cB,
+        choiceC: cC || null,
+        choiceD: cD || null,
+        correct: idxToLetter(correctIdx), // 'A' | 'B' | 'C' | 'D'
+        comment: comment || null,
+      });
     }
 
-    const created = await prisma.$transaction(writes);
-    return NextResponse.json({ created, problems });
-  } catch (err) {
-    console.error('[IMPORT]', err);
-    return NextResponse.json(
-      { error: 'Import failed. See server logs.' },
-      { status: 500 }
-    );
+    if (toCreate.length === 0) {
+      return NextResponse.json({
+        ok: true,
+        created: 0,
+        problems:
+          problems.length > 0
+            ? problems
+            : ['No valid rows found. Check column mapping.'],
+      });
+    }
+
+    // Insert in chunks so we don’t exceed Postgres/Prisma limits
+    const CHUNK = 500;
+    for (let i = 0; i < toCreate.length; i += CHUNK) {
+      const slice = toCreate.slice(i, i + CHUNK);
+      await prisma.question.createMany({ data: slice });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      created: toCreate.length,
+      problems,
+    });
+  } catch (err: any) {
+    // Return a readable error to the client so the UI can show it
+    const message =
+      err?.message ||
+      (typeof err === 'string' ? err : 'Unknown error while importing.');
+    return NextResponse.json({ ok: false, message }, { status: 500 });
   }
 }
