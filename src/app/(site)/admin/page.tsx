@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 
 type Subject = { id: string; name: string };
 type Choice = 'A' | 'B' | 'C' | 'D';
@@ -48,8 +47,15 @@ export default function AdminPage() {
   }, [status, error]);
 
   async function loadSubjects() {
+    setError('');
     const r = await fetch('/api/subjects', { cache: 'no-store' });
-    const data = await r.json();
+    const data = await r.json().catch(() => null);
+    if (!r.ok || !Array.isArray(data)) {
+      setError((data as any)?.error || 'Failed to load subjects');
+      setSubjects([]);
+      setSelected('');
+      return;
+    }
     setSubjects(data);
     if (!selected && data.length) setSelected(data[0].id);
   }
@@ -60,9 +66,13 @@ export default function AdminPage() {
     setQLoading(true);
     try {
       const r = await fetch(`/api/questions?subjectId=${encodeURIComponent(sid)}`, { cache: 'no-store' });
-      const data = await r.json();
-      if (r.ok) setQuestions(data);
-      else setError(data?.error || 'Failed to load questions');
+      const data = await r.json().catch(() => null);
+      if (!r.ok || !Array.isArray(data)) {
+        setError((data as any)?.error || 'Failed to load questions');
+        setQuestions([]);
+      } else {
+        setQuestions(data);
+      }
     } finally {
       setQLoading(false);
     }
@@ -79,7 +89,7 @@ export default function AdminPage() {
       body: JSON.stringify({ name: newSubject.trim() }),
     });
     const data = await r.json().catch(() => ({}));
-    if (!r.ok) { setError(data?.error || 'Create failed'); return; }
+    if (!r.ok) { setError((data as any)?.error || 'Create failed'); return; }
     setNewSubject('');
     setStatus('Subject added.');
     await loadSubjects();
@@ -91,8 +101,7 @@ export default function AdminPage() {
     const nn = prompt('Rename subject', s.name);
     if (!nn || nn === s.name) return;
     const r = await fetch(`/api/subjects/${id}?name=${encodeURIComponent(nn)}`, { method: 'PATCH' });
-    if (r.ok) setStatus('Subject renamed.');
-    else setError('Update failed');
+    if (r.ok) setStatus('Subject renamed.'); else setError('Update failed');
     loadSubjects();
   }
 
@@ -125,7 +134,7 @@ export default function AdminPage() {
     if (res.ok) {
       setStatus(`Imported ${data.created?.length ?? 0} questions.`);
       loadQuestions(selected);
-    } else setError(data?.error || 'Upload failed');
+    } else setError((data as any)?.error || 'Upload failed');
   }
 
   async function addManual() {
@@ -149,7 +158,7 @@ export default function AdminPage() {
       }),
     });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) { setError(d?.error || 'Add failed'); return; }
+    if (!r.ok) { setError((d as any)?.error || 'Add failed'); return; }
     setText(''); setA(''); setB(''); setC(''); setD(''); setComment(''); setCorrect('A');
     setStatus('Question added.');
     loadQuestions(selected);
@@ -164,7 +173,7 @@ export default function AdminPage() {
       body: JSON.stringify(editing),
     });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) { setError(d?.error || 'Update failed'); return; }
+    if (!r.ok) { setError((d as any)?.error || 'Update failed'); return; }
     setStatus('Question updated.');
     setEditing(null);
     loadQuestions(selected);
@@ -173,7 +182,7 @@ export default function AdminPage() {
     if (!confirm('Delete this question?')) return;
     const r = await fetch(`/api/questions/${id}`, { method: 'DELETE' });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) { setError(d?.error || 'Delete failed'); return; }
+    if (!r.ok) { setError((d as any)?.error || 'Delete failed'); return; }
     setStatus('Question deleted.');
     loadQuestions(selected);
   }

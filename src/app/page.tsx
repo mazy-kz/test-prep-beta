@@ -6,7 +6,7 @@ export default function Home() {
       className="
         min-h-screen
         bg-center bg-cover
-        bg-[url('/landing.jpg')]
+        bg-[url('/landing.JPG')]
         relative
       "
     >
@@ -14,11 +14,13 @@ export default function Home() {
       <div className="absolute inset-0 bg-black/40" />
 
       <div className="relative z-10 flex flex-col items-center justify-center min-h-screen text-center px-4">
-        <h1 className="text-3xl md:text-5xl font-semibold text-white drop-shadow-sm">
+        <h1 className="text-xl md:text-2xl font-semibold text-white drop-shadow-sm">
           Tolendi Test Prep — Beta v1.1
         </h1>
 
-        <p className="mt-4 text-white/90 text-lg md:text-xl">Good Luck.</p>
+        <h1 className="text-xl md:text-2xl font-semibold text-yellow-500 drop-shadow-sm">
+          Good Luck!
+        </h1>
 
         <div className="mt-8 flex gap-3">
           <a

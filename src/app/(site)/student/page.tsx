@@ -33,7 +33,7 @@ export default function Student() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [subjectId, setSubjectId] = useState('');
 
-  // 👇 new modes: 20 & 30 added
+  // 20/30/40/All
   const [mode, setMode] = useState<'twenty' | 'thirty' | 'forty' | 'all'>('forty');
   const [reveal, setReveal] = useState<Reveal>('immediate');
 
@@ -52,11 +52,15 @@ export default function Student() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch('/api/subjects')
-      .then((r) => r.json())
-      .then((d: Subject[]) => {
-        setSubjects(d);
-        if (d.length) setSubjectId(d[0].id);
+    fetch('/api/subjects', { cache: 'no-store' })
+      .then(async (r) => {
+        const data = await r.json().catch(() => null);
+        if (!r.ok || !Array.isArray(data)) {
+          setErr((data as any)?.error || 'Failed to load subjects');
+          return;
+        }
+        setSubjects(data);
+        if (data.length) setSubjectId(data[0].id);
       })
       .catch(() => setErr('Failed to load subjects'));
   }, []);
@@ -69,16 +73,19 @@ export default function Student() {
 
     try {
       const r = await fetch(`/api/questions?subjectId=${encodeURIComponent(subjectId)}`, { cache: 'no-store' });
-      const list: Question[] = await r.json();
-      if (!r.ok) { setErr((list as any)?.error || 'Could not start test'); setLoading(false); return; }
-      if (!Array.isArray(list) || list.length === 0) { setErr('This subject has no questions yet.'); setLoading(false); return; }
+      const list = await r.json().catch(() => null);
+      if (!r.ok || !Array.isArray(list)) {
+        setErr((list as any)?.error || 'Could not start test');
+        setLoading(false);
+        return;
+      }
+      if (list.length === 0) { setErr('This subject has no questions yet.'); setLoading(false); return; }
 
-      // 👇 pick size by mode
       const sizeMap = { twenty: 20, thirty: 30, forty: 40 } as const;
       const count = mode === 'all' ? list.length : Math.min(sizeMap[mode], list.length);
 
       const selected = shuffle(list).slice(0, count);
-      const prepared = selected.map((q) => {
+      const prepared = selected.map((q: Question) => {
         const opts: Array<{ key: ChoiceKey; text: string; correct: boolean }> = [];
         if (q.choiceA) opts.push({ key: 'A', text: q.choiceA, correct: q.correct === 'A' });
         if (q.choiceB) opts.push({ key: 'B', text: q.choiceB, correct: q.correct === 'B' });
@@ -98,7 +105,7 @@ export default function Student() {
 
   function pick(optionIndex: number) {
     if (!current) return;
-    if (reveal === 'immediate' && current.pickedIndex !== undefined) return; // lock after first pick in immediate mode
+    if (reveal === 'immediate' && current.pickedIndex !== undefined) return; // lock after first pick
     const copy = [...deck];
     copy[idx] = { ...current, pickedIndex: optionIndex };
     setDeck(copy);

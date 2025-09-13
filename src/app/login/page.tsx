@@ -7,7 +7,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
 
   const handleLogin = () => {
-    if (password === "tolendi123") {
+    if (password === "sHOTcANt32") {
       window.location.href = "/admin"; // go to admin dashboard
     } else {
       setError("Invalid password");
