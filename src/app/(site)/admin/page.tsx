@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 
-type Subject = { id: string; name: string };
+type Subject = { id: string; name: string; questionCount: number };
 type Choice = 'A' | 'B' | 'C' | 'D';
 type Question = {
   id: string;
@@ -102,7 +102,7 @@ export default function AdminPage() {
     if (!nn || nn === s.name) return;
     const r = await fetch(`/api/subjects/${id}?name=${encodeURIComponent(nn)}`, { method: 'PATCH' });
     if (r.ok) setStatus('Subject renamed.'); else setError('Update failed');
-    loadSubjects();
+    await loadSubjects();
   }
 
   async function delSubject(id: string) {
@@ -110,7 +110,7 @@ export default function AdminPage() {
     const r = await fetch(`/api/subjects/${id}`, { method: 'DELETE' });
     if (!r.ok) setError('Delete failed'); else setStatus('Subject deleted.');
     if (selected === id) setSelected('');
-    loadSubjects();
+    await loadSubjects();
     setQuestions([]);
   }
 
@@ -146,7 +146,8 @@ export default function AdminPage() {
         `Imported ${created} question${created === 1 ? '' : 's'}` +
           (skipped ? `. Skipped ${skipped}.` : '.')
       );
-      loadQuestions(selected);
+      await loadQuestions(selected);
+      await loadSubjects();
     } else {
       setError((data as any)?.error || 'Upload failed');
     }
@@ -176,7 +177,8 @@ export default function AdminPage() {
     if (!r.ok) { setError((d as any)?.error || 'Add failed'); return; }
     setText(''); setA(''); setB(''); setC(''); setD(''); setComment(''); setCorrect('A');
     setStatus('Question added.');
-    loadQuestions(selected);
+    await loadQuestions(selected);
+    await loadSubjects();
   }
 
   function beginEdit(q: Question) { setEditing(q); }
@@ -199,7 +201,8 @@ export default function AdminPage() {
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { setError((d as any)?.error || 'Delete failed'); return; }
     setStatus('Question deleted.');
-    loadQuestions(selected);
+    await loadQuestions(selected);
+    await loadSubjects();
   }
 
   const selectedName = useMemo(() => subjects.find(s => s.id === selected)?.name ?? '', [subjects, selected]);
@@ -221,13 +224,18 @@ export default function AdminPage() {
         <h2 className="font-medium">Subjects</h2>
         <div className="flex flex-wrap gap-2">
           {subjects.map((s) => (
-            <div key={s.id} className="border rounded-xl px-3 py-2 flex items-center gap-2">
+            <div key={s.id} className="border rounded-xl px-3 py-2 flex items-center gap-3">
               <button
-                className={`px-2 py-1 rounded ${selected === s.id ? 'bg-blue-50' : 'bg-white'}`}
+                className={`px-2 py-1 rounded text-left ${selected === s.id ? 'bg-blue-50' : 'bg-white'}`}
                 onClick={() => setSelected(s.id)}
                 title="Select to manage questions"
               >
-                {s.name}
+                <div className="flex flex-col">
+                  <span className="font-medium">{s.name}</span>
+                  <span className="text-xs text-gray-500">
+                    {s.questionCount} question{s.questionCount === 1 ? '' : 's'}
+                  </span>
+                </div>
               </button>
               <button className="text-blue-600" onClick={() => renameSubject(s.id)}>Rename</button>
               <button className="text-red-600" onClick={() => delSubject(s.id)}>Delete</button>
@@ -249,7 +257,11 @@ export default function AdminPage() {
 
           <select className="border rounded-md px-2 py-2" value={selected} onChange={(e) => setSelected(e.target.value)}>
             <option value="" disabled>Select subject…</option>
-            {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {subjects.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} ({s.questionCount})
+              </option>
+            ))}
           </select>
         </div>
       </section>
