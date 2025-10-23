@@ -8,9 +8,15 @@ export async function GET() {
   try {
     const subjects = await prisma.subject.findMany({
       orderBy: { createdAt: 'asc' },
-      select: { id: true, name: true },
+      include: { _count: { select: { questions: true } } },
     });
-    return NextResponse.json(subjects);
+    return NextResponse.json(
+      subjects.map((subject) => ({
+        id: subject.id,
+        name: subject.name,
+        questionCount: subject._count.questions,
+      })),
+    );
   } catch (e: any) {
     console.error('GET /api/subjects error:', e);
     return NextResponse.json({ error: 'Server error' }, { status: 500 });
