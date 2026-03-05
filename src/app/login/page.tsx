@@ -1,52 +1,82 @@
-"use client";
-import { useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+'use client';
+
+import { FormEvent, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const handleLogin = () => {
-    if (password === "sHOTcANt32") {
-      // ✅ mark session in localStorage (middleware checks this)
-      localStorage.setItem("isAdmin", "true");
+  async function handleLogin(e: FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
 
-      // ✅ redirect to admin page
-      document.cookie = "admin=1; Path=/; Max-Age=86400; SameSite=Lax";
-      router.push("/admin");
-    } else {
-      setError("Invalid password");
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError((data as { error?: string }).error || 'Login failed');
+        return;
+      }
+
+      const nextParam = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('next') : null;
+      const nextPath = nextParam || '/admin';
+      router.push(nextPath);
+      router.refresh();
+    } finally {
+      setLoading(false);
     }
-  };
+  }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gray-50 relative">
-      {/* 🔙 Home Button */}
-      <Link href="/" className="absolute top-4 right-4">
-        <button className="bg-gray-200 hover:bg-gray-300 text-black px-4 py-2 rounded-lg">
-          Home
-        </button>
+    <main className="relative flex min-h-screen items-center justify-center bg-gray-50">
+      <Link href="/" className="absolute right-4 top-4 rounded-lg bg-gray-200 px-4 py-2 text-black hover:bg-gray-300">
+        Home
       </Link>
 
-      <div className="bg-white p-8 rounded-lg shadow-md w-80">
-        <h1 className="text-xl font-bold mb-4 text-center">Admin Login</h1>
+      <form onSubmit={handleLogin} className="w-80 rounded-lg bg-white p-8 shadow-md">
+        <h1 className="mb-4 text-center text-xl font-bold">Admin Login</h1>
+
+        <input
+          type="email"
+          placeholder="Admin email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="mb-3 w-full rounded border p-2"
+          autoComplete="username"
+          required
+        />
+
         <input
           type="password"
-          placeholder="Enter password"
+          placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full p-2 border rounded mb-4"
+          className="mb-4 w-full rounded border p-2"
+          autoComplete="current-password"
+          required
         />
-        {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
+
+        {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+
         <button
-          onClick={handleLogin}
-          className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+          type="submit"
+          disabled={loading}
+          className="w-full rounded bg-blue-600 p-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Login
+          {loading ? 'Logging in…' : 'Login'}
         </button>
-      </div>
+      </form>
     </main>
   );
 }
