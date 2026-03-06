@@ -1,5 +1,7 @@
 export const PRODUCT_NAME = 'Test Prep Portfolio';
 export const PRODUCT_VERSION = 'v1.1';
+export const PRODUCT_NAME = 'Tolendi Test Prep';
+export const PRODUCT_VERSION = 'Beta v1.1';
 export const PRODUCT_TITLE = `${PRODUCT_NAME} — ${PRODUCT_VERSION}`;
 
 export const PRODUCT_DESCRIPTION =
