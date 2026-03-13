@@ -216,7 +216,7 @@ export default function Student() {
   );
 
   return (
-    <main className="max-w-6xl mx-auto p-6 space-y-6">
+    <main className="mx-auto max-w-6xl space-y-6 p-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-semibold text-slate-900">Student Practice</h1>
@@ -232,14 +232,14 @@ export default function Student() {
       {err && <Alert variant="error" title="Something went wrong">{err}</Alert>}
 
       {deck.length === 0 && (
-        <section className="space-y-6">
+        <section className="space-y-6 rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg shadow-slate-200/70 backdrop-blur">
           <div className="space-y-2">
             <label className="text-sm font-medium text-slate-700" htmlFor="subject-select">
               Subject
             </label>
             <select
               id="subject-select"
-              className="w-full max-w-xl rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full max-w-xl rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm text-slate-900 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={subjectId}
               onChange={(e) => setSubjectId(e.target.value)}
             >
@@ -304,7 +304,7 @@ export default function Student() {
       )}
 
       {deck.length > 0 && current && (
-        <section className="space-y-5">
+        <section className="space-y-5 rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg shadow-slate-200/70 backdrop-blur">
           <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <div>
               <h2 className="text-2xl font-semibold text-slate-900">{activeSubjectName || 'Practice session'}</h2>
@@ -324,13 +324,13 @@ export default function Student() {
             />
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="text-base font-medium text-slate-800 whitespace-pre-wrap">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+            <div className="whitespace-pre-wrap text-base font-medium leading-7 text-slate-900">
               {current.text}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3">
             {current.options.map((opt, i) => {
               const label = letterByIndex(i);
               const picked = current.pickedIndex === i;
@@ -343,13 +343,15 @@ export default function Student() {
                   key={i}
                   onClick={() => pick(i)}
                   className={buttonClasses({
-                    variant: picked ? 'primary' : 'outline',
-                    className: `justify-start whitespace-pre-wrap text-left ${
+                    variant: 'outline',
+                    className: `min-h-14 justify-start whitespace-pre-wrap border-2 px-4 py-3 text-left text-slate-900 ${
                       showCorrect
-                        ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-900 ring-1 ring-emerald-200'
                         : showWrongPicked
-                        ? 'bg-rose-50 border-rose-300 text-rose-900'
-                        : ''
+                        ? 'bg-rose-50 border-rose-500 text-rose-900 ring-1 ring-rose-200'
+                        : picked
+                        ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-200'
+                        : 'border-slate-300 hover:border-blue-300 hover:bg-blue-50/60'
                     }`,
                   })}
                   disabled={reveal === 'immediate' && current.pickedIndex !== undefined}
@@ -368,7 +370,7 @@ export default function Student() {
             >
               <div className="space-y-1">
                 <p>
-                  Correct answer: <b>{letterByIndex(current.options.findIndex((o) => o.correct))}</b>
+                  Correct answer: <b>{letterByIndex(current.options.findIndex((o) => o.correct))}</b> — {current.options.find((o) => o.correct)?.text}
                 </p>
                 {current.comment ? <p className="text-slate-700">{current.comment}</p> : null}
               </div>
