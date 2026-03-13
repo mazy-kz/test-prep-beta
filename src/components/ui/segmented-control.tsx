@@ -42,18 +42,13 @@ export function SegmentedControl<T extends string>({
               variant: isActive ? 'primary' : 'ghost',
               size: 'md',
               active: isActive,
-              className: 'flex-1 min-w-[5rem] sm:flex-none px-4 py-2 text-sm rounded-2xl',
+              className: 'flex-1 min-w-[5rem] sm:flex-none px-4 py-2 text-sm',
             })}
           >
-            <span className="flex flex-col items-center text-center">
-              <span className={cn('font-semibold leading-tight', isActive ? 'text-white' : 'text-slate-900')}>{option.label}</span>
+            <span className="flex flex-col">
+              <span>{option.label}</span>
               {option.description ? (
-                <span
-                  className={cn(
-                    'text-xs font-medium leading-tight',
-                    isActive ? 'text-blue-100' : 'text-slate-600'
-                  )}
-                >
+                <span className="text-xs font-normal text-slate-600">
                   {option.description}
                 </span>
               ) : null}

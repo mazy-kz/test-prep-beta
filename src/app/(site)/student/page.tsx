@@ -216,11 +216,11 @@ export default function Student() {
   );
 
   return (
-    <main className="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6">
+    <main className="max-w-6xl mx-auto p-6 space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-semibold text-slate-900">Student Practice</h1>
-          <p className="text-sm text-slate-700">
+          <p className="text-sm text-slate-600">
             Choose a subject, customize your session, and get instant feedback.
           </p>
         </div>
@@ -232,9 +232,9 @@ export default function Student() {
       {err && <Alert variant="error" title="Something went wrong">{err}</Alert>}
 
       {deck.length === 0 && (
-        <section className="space-y-6 rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-sm backdrop-blur sm:p-6">
+        <section className="space-y-6">
           <div className="space-y-2">
-            <label className="text-sm font-semibold text-slate-800" htmlFor="subject-select">
+            <label className="text-sm font-medium text-slate-700" htmlFor="subject-select">
               Subject
             </label>
             <select
@@ -256,7 +256,7 @@ export default function Student() {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <div className="text-sm font-semibold text-slate-800">Question quantity</div>
+              <div className="text-sm font-medium text-slate-700">Question quantity</div>
               {plannedCount ? (
                 <div className="text-xs text-slate-600">
                   Pulling {plannedCount} question{plannedCount === 1 ? '' : 's'}
@@ -278,7 +278,7 @@ export default function Student() {
           </div>
 
           <div className="space-y-2">
-            <div className="text-sm font-semibold text-slate-800">Answer reveal</div>
+            <div className="text-sm font-medium text-slate-700">Answer reveal</div>
             <SegmentedControl
               options={revealOptions}
               value={reveal}
@@ -290,8 +290,6 @@ export default function Student() {
           <div className="flex flex-wrap items-center gap-3">
             <Button
               onClick={start}
-              size="lg"
-              className="font-semibold"
               disabled={!subjectId || loading}
             >
               {loading ? 'Starting…' : 'Start Test'}
@@ -306,7 +304,7 @@ export default function Student() {
       )}
 
       {deck.length > 0 && current && (
-        <section className="space-y-5 rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-sm backdrop-blur sm:p-6">
+        <section className="space-y-5">
           <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <div>
               <h2 className="text-2xl font-semibold text-slate-900">{activeSubjectName || 'Practice session'}</h2>
@@ -332,7 +330,7 @@ export default function Student() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {current.options.map((opt, i) => {
               const label = letterByIndex(i);
               const picked = current.pickedIndex === i;
@@ -345,21 +343,19 @@ export default function Student() {
                   key={i}
                   onClick={() => pick(i)}
                   className={buttonClasses({
-                    variant: 'outline',
-                    className: `min-h-14 justify-start whitespace-pre-wrap text-left transition-all duration-200 disabled:opacity-100 ${
+                    variant: picked ? 'primary' : 'outline',
+                    className: `justify-start whitespace-pre-wrap text-left ${
                       showCorrect
-                        ? 'border-emerald-400 bg-emerald-100 text-emerald-950'
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
                         : showWrongPicked
-                        ? 'border-rose-400 bg-rose-100 text-rose-950'
-                        : picked
-                        ? 'border-blue-500 bg-blue-100 text-blue-950'
-                        : 'text-slate-800 hover:border-blue-300 hover:bg-blue-50'
+                        ? 'bg-rose-50 border-rose-300 text-rose-900'
+                        : ''
                     }`,
                   })}
                   disabled={reveal === 'immediate' && current.pickedIndex !== undefined}
                 >
-                  <span className="mr-2 shrink-0 font-semibold">{label}.</span>
-                  <span className="text-sm leading-6">{opt.text}</span>
+                  <span className="font-semibold mr-2">{label}.</span>
+                  <span className="text-sm leading-5">{opt.text}</span>
                 </button>
               );
             })}
@@ -374,18 +370,13 @@ export default function Student() {
                 <p>
                   Correct answer: <b>{letterByIndex(current.options.findIndex((o) => o.correct))}</b>
                 </p>
-                {current.comment ? (
-                  <p className="text-slate-800">
-                    <span className="font-semibold">Explanation: </span>
-                    {current.comment}
-                  </p>
-                ) : null}
+                {current.comment ? <p className="text-slate-700">{current.comment}</p> : null}
               </div>
             </Alert>
           )}
 
-          <div className="flex flex-wrap items-center gap-3 pt-1">
-            <Button onClick={next} size="lg" className="font-semibold">{idx === deck.length - 1 ? 'Finish test' : 'Next question'}</Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button onClick={next}>{idx === deck.length - 1 ? 'Finish test' : 'Next question'}</Button>
             <Button
               type="button"
               variant="outline"
